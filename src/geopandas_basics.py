@@ -322,16 +322,91 @@ def spatial_relationships(
         >>> result = spatial_relationships(points, lines, 'distance')
         >>> distances = result['results']
     """
-    # TODO: Implement this function
-    # Hints:
-    # - Validate both GeoDataFrames have CRS defined
-    # - Check if CRS match (transform if needed)
-    # - For intersects: use gdf1.geometry.intersects(gdf2.geometry)
-    # - For contains: use gdf1.geometry.contains(gdf2.geometry)
-    # - For within: use gdf1.geometry.within(gdf2.geometry)
-    # - For distance: use gdf1.geometry.distance(gdf2.geometry)
-    # - For nearest: use spatial indexing (.sindex)
-    raise NotImplementedError("spatial_relationships not yet implemented")
+    # Validate inputs
+    if not isinstance(gdf1, gpd.GeoDataFrame) or not isinstance(gdf2, gpd.GeoDataFrame):
+        raise ValueError("Both inputs must be GeoDataFrames")
+    
+    # Check CRS compatibility
+    if gdf1.crs != gdf2.crs:
+        raise ValueError(
+            f"CRS mismatch: gdf1 has {gdf1.crs}, gdf2 has {gdf2.crs}. "
+            "Transform to same CRS before testing relationships."
+        )
+    
+    # Validate relationship type
+    valid_relationships = ['intersects', 'contains', 'within', 'distance', 'nearest']
+    if relationship not in valid_relationships:
+        raise ValueError(
+            f"Invalid relationship '{relationship}'. "
+            f"Must be one of: {', '.join(valid_relationships)}"
+        )
+    
+    result = {'relationship': relationship}
+    
+    if relationship == 'intersects':
+        # Test which geometries from gdf1 intersect any geometry in gdf2
+        intersects_any = gdf1.geometry.apply(
+            lambda geom: gdf2.geometry.intersects(geom).any()
+        )
+        result['results'] = intersects_any
+        result['count'] = int(intersects_any.sum())
+        result['indices'] = intersects_any[intersects_any].index.tolist()
+        
+    elif relationship == 'contains':
+        # Test which geometries from gdf1 contain any geometry from gdf2
+        contains_any = gdf1.geometry.apply(
+            lambda geom: gdf2.geometry.within(geom).any()
+        )
+        result['results'] = contains_any
+        result['count'] = int(contains_any.sum())
+        result['indices'] = contains_any[contains_any].index.tolist()
+        
+    elif relationship == 'within':
+        # Test which geometries from gdf1 are within any geometry from gdf2
+        within_any = gdf1.geometry.apply(
+            lambda geom: gdf2.geometry.contains(geom).any()
+        )
+        result['results'] = within_any
+        result['count'] = int(within_any.sum())
+        result['indices'] = within_any[within_any].index.tolist()
+        
+    elif relationship == 'distance':
+        # Calculate minimum distance (convert to metric CRS first)
+        gdf1_proj = gdf1.to_crs('EPSG:5070')  # Albers Equal Area
+        gdf2_proj = gdf2.to_crs('EPSG:5070')
+        
+        min_distances_m = gdf1_proj.geometry.apply(
+            lambda geom: gdf2_proj.geometry.distance(geom).min()
+        )
+        min_distances_km = min_distances_m / 1000  # Convert to km
+        result['results'] = min_distances_km
+        result['distances'] = min_distances_km
+        result['count'] = len(min_distances_km)
+        result['mean_distance'] = float(min_distances_km.mean())
+        result['units'] = 'kilometers'
+        
+    elif relationship == 'nearest':
+        # Find nearest feature (using metric CRS for accurate distances)
+        gdf1_proj = gdf1.to_crs('EPSG:5070')
+        gdf2_proj = gdf2.to_crs('EPSG:5070')
+        
+        nearest_indices = []
+        nearest_distances = []
+        
+        for geom1 in gdf1_proj.geometry:
+            distances = gdf2_proj.geometry.distance(geom1)
+            nearest_idx = distances.idxmin()
+            nearest_dist_km = distances.min() / 1000  # Convert to km
+            nearest_indices.append(nearest_idx)
+            nearest_distances.append(nearest_dist_km)
+        
+        result['results'] = nearest_indices
+        result['nearest_indices'] = nearest_indices
+        result['nearest_distances'] = nearest_distances
+        result['count'] = len(nearest_indices)
+        result['units'] = 'kilometers'
+    
+    return result
 
 
 # Function 6: Spatial Joins
@@ -365,14 +440,30 @@ def spatial_joins(
         >>> result = spatial_joins(cities, countries, how='left', predicate='within')
         >>> print(f"Joined {len(result)} features")
     """
-    # TODO: Implement this function
-    # Hints:
-    # - Validate both inputs are GeoDataFrames
-    # - Check CRS compatibility
-    # - Use gpd.sjoin() for spatial join
-    # - Handle CRS mismatch by transforming
-    # - Validate result is not empty (for inner joins)
-    raise NotImplementedError("spatial_joins not yet implemented")
+    # Validate inputs
+    if not isinstance(left_gdf, gpd.GeoDataFrame) or not isinstance(right_gdf, gpd.GeoDataFrame):
+        raise ValueError("Both inputs must be GeoDataFrames")
+    
+    # Check CRS compatibility
+    if left_gdf.crs != right_gdf.crs:
+        raise ValueError(
+            f"CRS mismatch: left has {left_gdf.crs}, right has {right_gdf.crs}. "
+            "Transform to same CRS before joining."
+        )
+    
+    # Validate parameters
+    valid_how = ['inner', 'left', 'right']
+    if how not in valid_how:
+        raise ValueError(f"Invalid 'how' parameter '{how}'. Must be one of: {', '.join(valid_how)}")
+    
+    valid_predicates = ['intersects', 'contains', 'within']
+    if predicate not in valid_predicates:
+        raise ValueError(f"Invalid 'predicate' parameter '{predicate}'. Must be one of: {', '.join(valid_predicates)}")
+    
+    # Perform spatial join
+    result = gpd.sjoin(left_gdf, right_gdf, how=how, predicate=predicate)
+    
+    return result
 
 
 # Function 7: Overlay and Visualize
@@ -420,16 +511,98 @@ def overlay_and_visualize(
         >>> result = overlay_and_visualize(cities, save_path='cities_map.png')
         >>> plt.show()
     """
-    # TODO: Implement this function
-    # Hints:
-    # - If gdf2 provided, perform overlay with gpd.overlay()
-    # - Create visualization with gdf.plot()
-    # - Add basemap with contextily if available
-    # - For interactive map, use gdf.explore()
-    # - Calculate statistics (feature counts, total area)
-    # - Save figure if save_path provided
-    raise NotImplementedError("overlay_and_visualize not yet implemented")
+    result = {}
+    
+    # If gdf2 is provided, perform overlay operation
+    if gdf2 is not None:
+        # Validate inputs
+        if not isinstance(gdf1, gpd.GeoDataFrame) or not isinstance(gdf2, gpd.GeoDataFrame):
+            raise ValueError("Both inputs must be GeoDataFrames")
+        
+        # Check CRS compatibility
+        if gdf1.crs != gdf2.crs:
+            raise ValueError(
+                f"CRS mismatch: gdf1 has {gdf1.crs}, gdf2 has {gdf2.crs}. "
+                "Transform to same CRS before overlay."
+            )
+        
+        # Validate overlay operation
+        valid_operations = ['intersection', 'union', 'difference', 'symmetric_difference']
+        if overlay_how not in valid_operations:
+            raise ValueError(
+                f"Invalid overlay operation '{overlay_how}'. "
+                f"Must be one of: {', '.join(valid_operations)}"
+            )
+        
+        # Perform overlay
+        overlay_result = gpd.overlay(gdf1, gdf2, how=overlay_how)
+        result['overlay_result'] = overlay_result
+        
+        # Calculate statistics
+        stats = {
+            'operation': overlay_how,
+            'input1_count': len(gdf1),
+            'input2_count': len(gdf2),
+            'output_count': len(overlay_result),
+        }
+        
+        # Calculate areas if geometry is polygons and result is not empty
+        if len(overlay_result) > 0:
+            geom_type = overlay_result.geometry.geom_type.iloc[0]
+            if geom_type in ['Polygon', 'MultiPolygon']:
+                # Use projected CRS for area calculation if in geographic CRS
+                if overlay_result.crs and overlay_result.crs.is_geographic:
+                    overlay_proj = overlay_result.to_crs('EPSG:6933')  # Equal Area
+                    total_area_km2 = overlay_proj.geometry.area.sum() / 1e6
+                else:
+                    total_area_km2 = overlay_result.geometry.area.sum() / 1e6
+                stats['total_area_km2'] = float(total_area_km2)
+        
+        result['statistics'] = stats
+        
+        # Create visualization
+        fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+        if len(overlay_result) > 0:
+            overlay_result.plot(ax=ax, alpha=0.7, edgecolor='black', cmap='viridis')
+        else:
+            # Plot original datasets if overlay is empty
+            gdf1.plot(ax=ax, alpha=0.5, edgecolor='red')
+            gdf2.plot(ax=ax, alpha=0.5, edgecolor='blue')
 
+            legend_elements = [
+                Patch(facecolor='none', edgecolor='red', label='GDF1'),
+                Patch(facecolor='none', edgecolor='blue', label='GDF2')
+            ]
+            ax.legend(handles=legend_elements)
+        ax.set_title(f"Overlay Result: {overlay_how.title()}", fontsize=14)
+        ax.set_xlabel('Longitude')
+        ax.set_ylabel('Latitude')
+        plt.tight_layout()
+        
+    else:
+        # Visualization only (no overlay)
+        result['statistics'] = {
+            'feature_count': len(gdf1),
+            'geometry_types': gdf1.geometry.geom_type.unique().tolist()
+        }
+        
+        # Create visualization
+        fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+        gdf1.plot(ax=ax, alpha=0.7, edgecolor='black', cmap='viridis')
+        ax.set_title("Spatial Data Visualization", fontsize=14)
+        ax.set_xlabel('Longitude')
+        ax.set_ylabel('Latitude')
+        plt.tight_layout()
+    
+    result['figure'] = fig
+    
+    # Save figure if path provided
+    if save_path:
+        save_path = Path(save_path)
+        fig.savefig(save_path, dpi=300, bbox_inches='tight')
+        result['saved_path'] = str(save_path)
+    
+    return result
 
 # Helper Functions (provided for you)
 
